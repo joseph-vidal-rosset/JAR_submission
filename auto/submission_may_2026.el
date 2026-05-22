@@ -6,7 +6,17 @@
    (TeX-add-to-alist 'LaTeX-provided-class-options
                      '(("sn-jnl" "pdflatex" "sn-mathphys-num")))
    (TeX-add-to-alist 'LaTeX-provided-package-options
-                     '(("graphicx" "") ("multirow" "") ("amsmath" "") ("amssymb" "") ("amsfonts" "") ("amsthm" "") ("mathrsfs" "") ("appendix" "title") ("xcolor" "") ("textcomp" "") ("manyfoot" "") ("booktabs" "") ("bussproofs" "")))
+                     '(("listings" "") ("graphicx" "") ("multirow" "") ("amsmath" "") ("amssymb" "") ("amsfonts" "") ("amsthm" "") ("mathrsfs" "") ("appendix" "title") ("xcolor" "") ("textcomp" "") ("manyfoot" "") ("booktabs" "") ("bussproofs" "") ("tcolorbox" "") ("fancyvrb" "")))
+   (add-to-list 'LaTeX-verbatim-environments-local "SaveVerbatim")
+   (add-to-list 'LaTeX-verbatim-environments-local "VerbatimOut")
+   (add-to-list 'LaTeX-verbatim-environments-local "LVerbatim*")
+   (add-to-list 'LaTeX-verbatim-environments-local "LVerbatim")
+   (add-to-list 'LaTeX-verbatim-environments-local "BVerbatim*")
+   (add-to-list 'LaTeX-verbatim-environments-local "BVerbatim")
+   (add-to-list 'LaTeX-verbatim-environments-local "Verbatim*")
+   (add-to-list 'LaTeX-verbatim-environments-local "Verbatim")
+   (add-to-list 'LaTeX-verbatim-macros-with-delims-local "Verb*")
+   (add-to-list 'LaTeX-verbatim-macros-with-delims-local "Verb")
    (TeX-run-style-hooks
     "latex2e"
     "sn-jnl"
@@ -23,7 +33,9 @@
     "textcomp"
     "manyfoot"
     "booktabs"
-    "bussproofs")
+    "bussproofs"
+    "tcolorbox"
+    "fancyvrb")
    (TeX-add-symbols
     "nvdash")
    (LaTeX-add-labels
@@ -59,6 +71,8 @@
     "proposition"
     "example"
     "remark"
-    "definition"))
+    "definition")
+   (LaTeX-add-tcolorbox-newtcolorboxes
+    '("coqbox" "" "" "")))
  :latex)
 
