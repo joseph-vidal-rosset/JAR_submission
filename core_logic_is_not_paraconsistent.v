@@ -172,7 +172,7 @@ Definition unprovable_core (G : set formula) (C : option formula) : Prop :=
 
 
 (* ================================================================
-   PART 1 -- MINIMAL is a subset of CORE
+   PART 1 -- Within F, MINIMAL is a subset of CORE
 
    Every minimal derivation *in F* is also a Core derivation (Section
    1 of the paper: "any intuitionistic theorem is also a Core
