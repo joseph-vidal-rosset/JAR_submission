@@ -1,61 +1,58 @@
 (* ================================================================
-   CERTIFIED PROOF (Coq)
-   "Core Logic is not Paraconsistent"
-   J. Vidal-Rosset, Universite de Lorraine, 2026
-   Submitted to the Journal of Automated Reasoning
+   CERTIFIED PROOF (Coq) "Core Logic is not Paraconsistent"
+   J. Vidal-Rosset, Universite de Lorraine, 2026 Submitted to the
+   Journal of Automated Reasoning
    ----------------------------------------------------------------
    This file mechanically certifies the central argument of the
-   paper. The mathematical content (statement, motivation,
-   dialectic) is in the paper. The comments here address only
-   what the Coq commands do.
-
-   Final theorem: claim1_false : nat -> nat -> False.
-   Print Assumptions claim1_false returns two axioms:
-     - Claim1_Tennant: the antisequent posited by Tennant in
-       Core Logic, p. 156.
-     - min_antisequent_rule_to_core: the transfer of antisequent
-       rules from minimal_F to core_logic (structural property
-       of F as a shared fragment).
-
-   The file compiles in Coq 8.18 without warnings. To check
-   online: paste it into https://jscoq.github.io/scratchpad.html
-   and step through with the green arrows.
+   paper. The mathematical content (statement, motivation, dialectic)
+   is in the paper. The comments here address only what the Coq
+   commands do.
+  -  Final theorem: claim1_false : nat -> nat -> False.  Print
+   Assumptions claim1_false returns two axioms: - Claim1_Tennant: the
+   antisequent posited by Tennant in Core Logic, p. 156.  -
+   min_antisequent_rule_to_core: the transfer of antisequent rules
+   from minimal_F to core_logic (structural property of F as a shared
+   fragment).
+   - The file compiles in Coq 8.18 without warnings. To check online:
+   paste it into https://jscoq.github.io/scratchpad.html and step
+   through with the green arrows.
    ================================================================ *)
 From Coq Require Import List ListSet.
 Import ListNotations.
 (* ----------------------------------------------------------------
    THE LANGUAGE (paper Sec. 2.1)
-
    "Inductive T : Type := ..." declares a new type T with the listed
    constructors. Coq enforces that constructors are distinct (Var,
    Neg, Impl produce distinct values), a fact used later by the tactic
    "discriminate".
    ---------------------------------------------------------------- *)
-Inductive formula : Type :=
+Inductive formula :
+  Type :=
   | Var  : nat -> formula
   | Neg  : formula -> formula
   | Impl : formula -> formula -> formula.
 (* ----------------------------------------------------------------
    THE FRAGMENT PARAMETER AND THE DERIVABILITY PREDICATE
-
-   F has two readings: minimal_F (the rules shared with M) and
-   core_logic (the rules of C, which adds R->_C). We encode this by a
-   parameter f : fragment_F.
-
-   Sequents are encoded with contexts as lists (with an Ex constructor
+   - Symbol F has two readings: minimal_F (the rules shared with M) and
+   core_logic, i.e. the whole fragment F of the rules of C, where rule
+   R->_C is added. This is encoded by a parameter f : fragment_F.
+   - Sequents are encoded with contexts as lists (with an Ex constructor
    for adjacent exchange, the only structural move the argument uses)
    and right-hand sides as "option formula" (Some A for a single
    formula, None for the empty succedent).
-
-   The first five constructors quantify over f, so they exist in both
-   readings. The sixth constructor R_arrow_core has f = core_logic
+   - The first five constructors quantify over f, so they exist in both
+   readings.
+   - The sixth constructor R_arrow_core has f = core_logic
    fixed in its signature, restricting it to the Core reading of
-   F. Antisequents are written directly as "derivable f G C -> False"
+   F.
+   - Antisequents are written directly as "derivable f G C -> False"
    without a separate definition.
    ---------------------------------------------------------------- *)
-Inductive fragment_F : Type := minimal_F | core_logic.
+Inductive fragment_F :
+  Type := minimal_F | core_logic.
 
-Inductive derivable : fragment_F -> set formula -> option formula -> Prop :=
+Inductive derivable :
+  fragment_F -> set formula -> option formula -> Prop :=
   | Ax           : forall f G A,
                      In A G ->
                      derivable f G (Some A)
@@ -76,14 +73,14 @@ Inductive derivable : fragment_F -> set formula -> option formula -> Prop :=
                      derivable core_logic (A :: G) None ->
                      derivable core_logic G (Some (Impl A B)).
 (* ----------------------------------------------------------------
-   MIN-DERIVATIONS ARE CORE-DERIVATIONS
-
+   MIN-DERIVATIONS ARE CORE-DERIVATIONS in FRAGMENT F
    By induction on the derivation. Each constructor instance at f =
    minimal_F is re-applied at f = core_logic; the case R_arrow_core is
    impossible because the inductive hypothesis is typed at minimal_F,
    contradicting the constructor's signature.
    ---------------------------------------------------------------- *)
-Lemma MinToCore : forall G C,
+Lemma MinToCore :
+  forall G C,
   derivable minimal_F G C -> derivable core_logic G C.
 Proof.
   intros G C H.
@@ -101,7 +98,8 @@ Qed.
 (* ----------------------------------------------------------------
    THE CORE-DERIVABLE ABSURDITY  (paper Sec. 2.5, left subtree)
    ---------------------------------------------------------------- *)
-Lemma absurdity_core : forall (a : nat),
+Lemma absurdity_core :
+  forall (a : nat),
   derivable core_logic [Var a; Neg (Var a)] None.
 Proof.
   intros a.
@@ -112,7 +110,8 @@ Qed.
 (* ----------------------------------------------------------------
    DNS.1 IS A DERIVED RULE OF minimal_F  (paper Table 2)
    ---------------------------------------------------------------- *)
-Theorem DNS1_instantiated : forall (a b : nat),
+Theorem DNS1_instantiated :
+  forall (a b : nat),
   derivable minimal_F [Var a; Neg (Var a)] (Some (Var b)) ->
   derivable minimal_F [Impl (Impl (Var a) (Var b)) (Var b); Neg (Var a)]
                        (Some (Var b)).
@@ -125,7 +124,8 @@ Qed.
 (* ----------------------------------------------------------------
    DNS.2 IS A DERIVED RULE OF core_logic  (paper Table 2)
    ---------------------------------------------------------------- *)
-Theorem DNS2_instantiated : forall (a b : nat),
+Theorem DNS2_instantiated :
+  forall (a b : nat),
   derivable core_logic [Var a; Neg (Var a)] None ->
   derivable core_logic [Impl (Impl (Var a) (Var b)) (Var b); Neg (Var a)]
                        (Some (Var b)).
@@ -137,23 +137,21 @@ Proof.
 Qed.
 (* ----------------------------------------------------------------
    DNS.1 IS INVERTIBLE IN minimal_F (paper Sec. 2.3)
-
-   Structural induction on the derivation. The R_arrow_core case is
+   - Structural induction on the derivation. The R_arrow_core case is
    eliminated by "discriminate Hf" because R_arrow_core has f =
    core_logic in its signature while the induction is at f =
    minimal_F. This is the Coq counterpart of Remark 1 of the paper.
-
-   The "remember ... eqn:..." idiom freezes specific terms as fresh
+   - The "remember ... eqn:..." idiom freezes specific terms as fresh
    variables (with equations recording what they stand for), so that
    "induction" does not destroy them. After "revert ...; induction H;
    intros ...", each inductive case has the equations available for
    analysis.
-
-   Two-step proof: (1) sub-lemma for the singleton context; (2) main
+   - Two-step proof: (1) sub-lemma for the singleton context; (2) main
    theorem, generalised over both orderings of the doubleton context
    to absorb Exchange.
    ---------------------------------------------------------------- *)
-Lemma R_arrow_inv_NegA_min : forall (a b : nat),
+Lemma R_arrow_inv_NegA_min :
+  forall (a b : nat),
   derivable minimal_F [Neg (Var a)] (Some (Impl (Var a) (Var b))) ->
   derivable minimal_F [Var a; Neg (Var a)] (Some (Var b)).
 Proof.
@@ -172,7 +170,8 @@ Proof.
   - discriminate Hf.
 Qed.
 
-Theorem DNS1_inv_instantiated : forall (a b : nat),
+Theorem DNS1_inv_instantiated :
+  forall (a b : nat),
   derivable minimal_F [Impl (Impl (Var a) (Var b)) (Var b); Neg (Var a)]
                        (Some (Var b)) ->
   derivable minimal_F [Var a; Neg (Var a)] (Some (Var b)).
@@ -209,7 +208,8 @@ Qed.
 (* ----------------------------------------------------------------
    DNS.1-ANTI BY CONTRAPOSITION  (paper Sec. 2.4)
    ---------------------------------------------------------------- *)
-Theorem DNS1_anti_instantiated : forall (a b : nat),
+Theorem DNS1_anti_instantiated :
+  forall (a b : nat),
   (derivable minimal_F [Var a; Neg (Var a)] (Some (Var b)) -> False) ->
   (derivable minimal_F [Impl (Impl (Var a) (Var b)) (Var b); Neg (Var a)]
      (Some (Var b)) -> False).
@@ -235,7 +235,6 @@ Axiom min_antisequent_rule_to_core :
      (derivable core_logic G' C' -> False)).
 (* ----------------------------------------------------------------
    THE CONTRADICTION  (paper Sec. 2.5)
-
    Four steps:
      (1) "assert" introduces an intermediate proposition (the
          lifted DNS.1-anti rule in core_logic), proved by applying
@@ -246,21 +245,22 @@ Axiom min_antisequent_rule_to_core :
          the absurdity in core_logic.
      (4) "apply absurdity_core" closes it.
    ---------------------------------------------------------------- *)
-Theorem claim1_false : forall (a b : nat), False.
+Theorem claim1_false :
+  forall (a b : nat), False.
 Proof.
   intros a b.
   assert (Hanti_core :
     (derivable core_logic [Var a; Neg (Var a)] (Some (Var b)) -> False) ->
     (derivable core_logic [Impl (Impl (Var a) (Var b)) (Var b); Neg (Var a)]
                           (Some (Var b)) -> False)).
-  { apply min_antisequent_rule_to_core.
-    apply DNS1_anti_instantiated. }
+{ apply min_antisequent_rule_to_core.
+  apply DNS1_anti_instantiated. }
   apply (Hanti_core (Claim1_Tennant a b)).
   apply DNS2_instantiated.
   apply absurdity_core.
 Qed.
-(* ================================================================
-   COROLLARY  (paper Sec. 3): Claim 2 entails the same contradiction
-   by substituting Neg (Var b) for Var b throughout. The proof
-   script is identical modulo that substitution.
-   ================================================================ *)
+(*=====================================================================
+   COROLLARY (paper Sec. 3): Claim 2 entails the same contradiction by
+   substituting Neg (Var b) for Var b throughout. The proof script is
+   exactly the same, modulo that substitution.
+   ====================================================================*)
