@@ -1,8 +1,8 @@
 (* ================================================================
-   CERTIFIED PROOF (Coq) "Core Logic is not Paraconsistent"
-   J. Vidal-Rosset, Universite de Lorraine, 2026 Submitted to the
-   Journal of Automated Reasoning
-   ----------------------------------------------------------------
+   A Proof in Coq that Core Logic is not Paraconsistent,
+   Submitted to the Journal of Automated Reasoning - 2026 .
+   ===============================================================
+
    This file mechanically certifies the central argument of the
    paper. The mathematical content (statement, motivation, dialectic)
    is in the paper. The comments here address only what the Coq
