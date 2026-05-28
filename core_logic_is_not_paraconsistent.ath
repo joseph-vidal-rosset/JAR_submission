@@ -1,0 +1,1480 @@
+#============================================================================
+# core_logic_is_not_paraconsistent.ath
+# Step 2 (corrected): rename the Succedent-typed argument of
+# l-arrow-rule and exchange-rule to avoid name collision with the
+# Succedent-typed parameter S of well-formed.
+#============================================================================
+
+# --- Datatypes ---
+
+datatype Formula :=
+    (Var Ide)
+  | (Neg Formula)
+  | (Impl Formula Formula)
+
+datatype Succedent :=
+    none-succ
+  | (some-succ Formula)
+
+datatype Fragment := minimal-F | core-logic
+
+datatype Deriv :=
+    (ax-rule Fragment (List Formula) Formula)
+  | (l-neg-rule Fragment (List Formula) Formula Deriv)
+  | (r-arrow-rule Fragment (List Formula) Formula Formula Deriv)
+  | (l-arrow-rule Fragment (List Formula) Formula Formula Succedent
+                  Deriv Deriv)
+  | (exchange-rule Fragment Formula Formula Succedent Deriv)
+  | (r-arrow-core-rule (List Formula) Formula Formula Deriv)
+
+# Assert the free-generation (no-confusion + injectivity + no-junk)
+# axioms of all relevant datatypes into the assumption base. These are
+# needed to close the impossible cases and extract injectivity facts
+# during the DNS.1 inversion proofs. datatype-axioms only returns the
+# axioms as a value, so they must be explicitly asserted to be usable
+# by instance/uspec/chain.
+assert (datatype-axioms "Succedent")
+assert (datatype-axioms "Formula")
+assert (datatype-axioms "Fragment")
+assert (datatype-axioms "List")
+
+# Named accessors for the specific no-confusion / injectivity axioms we
+# reuse when closing impossible cases. Positions established by
+# inspecting (datatype-axioms "Formula"):
+#   1 (head)                  : Neg x1   =/= Impl y1 y2
+#   2 (head tail)             : Var x1   =/= Neg y1
+#   3 (head tail tail)        : Var x1   =/= Impl y1 y2
+define formula-axioms := (datatype-axioms "Formula")
+define neg-neq-impl  := (head formula-axioms)
+define var-neq-neg   := (head (tail formula-axioms))
+define var-neq-impl  := (head (tail (tail formula-axioms)))
+# Succedent has a single no-confusion axiom: none-succ =/= some-succ y1.
+define succ-axioms   := (datatype-axioms "Succedent")
+define none-neq-some := (head succ-axioms)
+
+# --- Variable abbreviations ---
+# Sc, Sc' for succedent arguments INSIDE Deriv constructors;
+# S,  S'  for the succedent parameter of well-formed.
+# This separation prevents the parser from confusing the two.
+
+define [A B C]      := [?A:Formula ?B:Formula ?C:Formula]
+define [G G']       := [?G:(List Formula) ?G':(List Formula)]
+define [f f']       := [?f:Fragment ?f':Fragment]
+define [S S']       := [?S:Succedent ?S':Succedent]
+define [Sc Sc']     := [?Sc:Succedent ?Sc':Succedent]
+define [d d1 d2]    := [?d:Deriv ?d1:Deriv ?d2:Deriv]
+define [x y]        := [?x:Formula ?y:Formula]
+
+# --- Membership predicate ---
+
+declare mem : [Formula (List Formula)] -> Boolean
+
+assert* mem-def :=
+  [(~ (mem A nil))
+   ((mem A (B :: G)) <==> (A = B | mem A G))]
+
+# --- Well-formedness of a derivation tree ---
+
+declare well-formed : [Deriv Fragment (List Formula) Succedent] -> Boolean
+
+assert* wf-ax :=
+  [((well-formed (ax-rule f G A) f' G' S)
+      <==>
+    (f = f' & G = G' & S = (some-succ A) & mem A G))]
+
+assert* wf-l-neg :=
+  [((well-formed (l-neg-rule f G A d) f' G' S)
+      <==>
+    (f = f' & G' = ((Neg A) :: G) & S = none-succ
+     & (well-formed d f G (some-succ A))))]
+
+assert* wf-r-arrow :=
+  [((well-formed (r-arrow-rule f G A B d) f' G' S)
+      <==>
+    (f = f' & G = G' & S = (some-succ (Impl A B))
+     & (well-formed d f (A :: G) (some-succ B))))]
+
+# l-arrow-rule: the 5th constructor argument carries the succedent
+# value (named Sc here, NOT S, to avoid collision with the well-formed
+# parameter S').
+
+assert* wf-l-arrow :=
+  [((well-formed (l-arrow-rule f G A B Sc d1 d2) f' G' S')
+      <==>
+    (f = f' & G' = ((Impl A B) :: G) & Sc = S'
+     & (well-formed d1 f G (some-succ A))
+     & (well-formed d2 f (B :: G) Sc)))]
+
+# exchange-rule: same renaming Sc instead of S for the constructor's
+# succedent argument.
+
+assert* wf-exchange :=
+  [((well-formed (exchange-rule f x y Sc d) f' G' S')
+      <==>
+    (f = f' & G' = (y :: (x :: nil)) & Sc = S'
+     & (well-formed d f (x :: (y :: nil)) Sc)))]
+
+assert* wf-r-arrow-core :=
+  [((well-formed (r-arrow-core-rule G A B d) f' G' S)
+      <==>
+    (f' = core-logic & G = G' & S = (some-succ (Impl A B))
+     & (well-formed d core-logic (A :: G) none-succ)))]
+
+#============================================================================
+# The predicate "derivable"
+#============================================================================
+# (derivable f G S) := there exists a derivation tree d such that
+# (well-formed d f G S). This is the Athena counterpart of Coq's
+# Inductive derivable.
+
+declare derivable : [Fragment (List Formula) Succedent] -> Boolean
+
+assert* derivable-def :=
+  [((derivable f G S) <==> (exists ?d:Deriv . (well-formed ?d f G S)))]
+
+#============================================================================
+# TEST 1 — well-formedness of a single Ax leaf
+#============================================================================
+# Goal: for every meta-identifier a, the axiom leaf
+#     ax-rule core-logic [Neg(Var a), Var a] (Var a)
+# is well-formed as a derivation of [Neg(Var a), Var a] |- Var a in
+# core-logic.
+#
+# Following the in-lemma-1 idiom from the manual (p. 502): we let
+# Athena do the structural decomposition of mem-def and wf-ax
+# automatically, starting from the trivial fact (Var a) = (Var a).
+
+define ax-leaf-wf :=
+  (forall ?a:Ide .
+    (well-formed
+       (ax-rule core-logic
+                ((Neg (Var ?a)) :: ((Var ?a) :: nil))
+                (Var ?a))
+       core-logic
+       ((Neg (Var ?a)) :: ((Var ?a) :: nil))
+       (some-succ (Var ?a))))
+
+conclude ax-leaf-wf
+  pick-any a:Ide
+    # Step 1: establish membership of (Var a) in [Neg(Var a), Var a].
+    let { mem-fact :=
+            (!chain->
+              [((Var a) = (Var a))
+                ==> (mem (Var a) ((Var a) :: nil))              [mem-def]
+                ==> (mem (Var a)
+                         ((Neg (Var a)) :: ((Var a) :: nil)))   [mem-def]]);
+          # Step 2: assemble the three trivial reflexivities.
+          _ := (!reflex core-logic);
+          _ := (!reflex ((Neg (Var a)) :: ((Var a) :: nil)));
+          _ := (!reflex (some-succ (Var a)));
+          # Step 3: build the four-clause conjunction expected by wf-ax.
+          conj-fact :=
+            conclude
+              (core-logic = core-logic
+               & ((Neg (Var a)) :: ((Var a) :: nil))
+                 = ((Neg (Var a)) :: ((Var a) :: nil))
+               & (some-succ (Var a)) = (some-succ (Var a))
+               & mem (Var a)
+                     ((Neg (Var a)) :: ((Var a) :: nil)))
+              (!conj-intro
+                 (core-logic = core-logic
+                  & ((Neg (Var a)) :: ((Var a) :: nil))
+                    = ((Neg (Var a)) :: ((Var a) :: nil))
+                  & (some-succ (Var a)) = (some-succ (Var a))
+                  & mem (Var a)
+                        ((Neg (Var a)) :: ((Var a) :: nil))))
+        }
+      # Step 4: apply wf-ax in the <== direction.
+      (!chain<-
+        [(well-formed
+            (ax-rule core-logic
+                     ((Neg (Var a)) :: ((Var a) :: nil))
+                     (Var a))
+            core-logic
+            ((Neg (Var a)) :: ((Var a) :: nil))
+            (some-succ (Var a)))
+          <== (core-logic = core-logic
+               & ((Neg (Var a)) :: ((Var a) :: nil))
+                 = ((Neg (Var a)) :: ((Var a) :: nil))
+               & (some-succ (Var a)) = (some-succ (Var a))
+               & mem (Var a)
+                     ((Neg (Var a)) :: ((Var a) :: nil)))      [wf-ax]])
+
+#============================================================================
+# REUSABLE PROOF METHODS, one per inference rule
+#============================================================================
+# Each method takes the rule parameters as arguments and, assuming the
+# premiss derivations are already established (in the assumption base),
+# produces the well-formedness of the conclusion. This avoids repeating
+# the reflex + conj-intro + chain<- boilerplate at every use site.
+
+# prove-ax-wf: given a fragment fr, a context Gamma, and a formula phi,
+# assuming (mem phi Gamma) is in the assumption base, derive
+#   (well-formed (ax-rule fr Gamma phi) fr Gamma (some-succ phi)).
+
+define prove-ax-wf :=
+  method (fr Gamma phi)
+    let { _ := (!reflex fr);
+          _ := (!reflex Gamma);
+          _ := (!reflex (some-succ phi));
+          _ := (!conj-intro
+                  (fr = fr
+                   & Gamma = Gamma
+                   & (some-succ phi) = (some-succ phi)
+                   & mem phi Gamma))
+        }
+      (!chain<-
+        [(well-formed (ax-rule fr Gamma phi) fr Gamma (some-succ phi))
+          <== (fr = fr
+               & Gamma = Gamma
+               & (some-succ phi) = (some-succ phi)
+               & mem phi Gamma)                                [wf-ax]])
+
+# Quick re-validation: prove ax-leaf-wf again, this time via the method.
+
+define ax-leaf-wf-via-method :=
+  (forall ?a:Ide .
+    (well-formed
+       (ax-rule core-logic
+                ((Neg (Var ?a)) :: ((Var ?a) :: nil))
+                (Var ?a))
+       core-logic
+       ((Neg (Var ?a)) :: ((Var ?a) :: nil))
+       (some-succ (Var ?a))))
+
+conclude ax-leaf-wf-via-method
+  pick-any a:Ide
+    let { _ := (!chain->
+                 [((Var a) = (Var a))
+                   ==> (mem (Var a) ((Var a) :: nil))            [mem-def]
+                   ==> (mem (Var a)
+                            ((Neg (Var a)) :: ((Var a) :: nil))) [mem-def]])
+        }
+      (!prove-ax-wf core-logic
+                    ((Neg (Var a)) :: ((Var a) :: nil))
+                    (Var a))
+
+# prove-l-neg-wf: given fragment fr, context Gamma, formula phi, and a
+# premiss derivation dprem assumed well-formed for
+#   (well-formed dprem fr Gamma (some-succ phi)),
+# derive
+#   (well-formed (l-neg-rule fr Gamma phi dprem)
+#                fr ((Neg phi) :: Gamma) none-succ).
+
+define prove-l-neg-wf :=
+  method (fr Gamma phi dprem)
+    let { _ := (!reflex fr);
+          _ := (!reflex ((Neg phi) :: Gamma));
+          _ := (!reflex none-succ);
+          _ := (!conj-intro
+                  (fr = fr
+                   & ((Neg phi) :: Gamma) = ((Neg phi) :: Gamma)
+                   & none-succ = none-succ
+                   & (well-formed dprem fr Gamma (some-succ phi))))
+        }
+      (!chain<-
+        [(well-formed (l-neg-rule fr Gamma phi dprem)
+                      fr ((Neg phi) :: Gamma) none-succ)
+          <== (fr = fr
+               & ((Neg phi) :: Gamma) = ((Neg phi) :: Gamma)
+               & none-succ = none-succ
+               & (well-formed dprem fr Gamma (some-succ phi)))  [wf-l-neg]])
+
+# prove-exchange-wf: given fragment fr, formulas xf and yf, succedent
+# sc, and a premiss derivation dprem assumed well-formed for
+#   (well-formed dprem fr [xf, yf] sc),
+# derive
+#   (well-formed (exchange-rule fr xf yf sc dprem) fr [yf, xf] sc).
+
+define prove-exchange-wf :=
+  method (fr xf yf sc dprem)
+    let { _ := (!reflex fr);
+          _ := (!reflex (yf :: (xf :: nil)));
+          _ := (!reflex sc);
+          _ := (!conj-intro
+                  (fr = fr
+                   & (yf :: (xf :: nil)) = (yf :: (xf :: nil))
+                   & sc = sc
+                   & (well-formed dprem fr (xf :: (yf :: nil)) sc)))
+        }
+      (!chain<-
+        [(well-formed (exchange-rule fr xf yf sc dprem)
+                      fr (yf :: (xf :: nil)) sc)
+          <== (fr = fr
+               & (yf :: (xf :: nil)) = (yf :: (xf :: nil))
+               & sc = sc
+               & (well-formed dprem fr (xf :: (yf :: nil)) sc)) [wf-exchange]])
+
+# prove-r-arrow-core-wf: the Core-specific rule R->C. Given context
+# Gamma, formulas A and B, and a premiss derivation dprem assumed
+# well-formed for
+#   (well-formed dprem core-logic (A :: Gamma) none-succ),
+# derive
+#   (well-formed (r-arrow-core-rule Gamma A B dprem)
+#                core-logic Gamma (some-succ (Impl A B))).
+# Note the fragment is FIXED to core-logic (first conjunct is the
+# equation f' = core-logic, not a reflexivity f = f').
+
+define prove-r-arrow-core-wf :=
+  method (Gamma A B dprem)
+    let { _ := (!reflex core-logic);
+          _ := (!reflex Gamma);
+          _ := (!reflex (some-succ (Impl A B)));
+          _ := (!conj-intro
+                  (core-logic = core-logic
+                   & Gamma = Gamma
+                   & (some-succ (Impl A B)) = (some-succ (Impl A B))
+                   & (well-formed dprem core-logic
+                                  (A :: Gamma) none-succ)))
+        }
+      (!chain<-
+        [(well-formed (r-arrow-core-rule Gamma A B dprem)
+                      core-logic Gamma (some-succ (Impl A B)))
+          <== (core-logic = core-logic
+               & Gamma = Gamma
+               & (some-succ (Impl A B)) = (some-succ (Impl A B))
+               & (well-formed dprem core-logic
+                              (A :: Gamma) none-succ))          [wf-r-arrow-core]])
+
+# prove-l-arrow-wf: the L-> rule. Given fragment fr, context Gamma,
+# formulas A and B, succedent sc, and two premiss derivations:
+#   dleft  assumed well-formed for (well-formed dleft fr Gamma (some-succ A)),
+#   dright assumed well-formed for (well-formed dright fr (B :: Gamma) sc),
+# derive
+#   (well-formed (l-arrow-rule fr Gamma A B sc dleft dright)
+#                fr ((Impl A B) :: Gamma) sc).
+
+define prove-l-arrow-wf :=
+  method (fr Gamma A B sc dleft dright)
+    let { _ := (!reflex fr);
+          _ := (!reflex ((Impl A B) :: Gamma));
+          _ := (!reflex sc);
+          _ := (!conj-intro
+                  (fr = fr
+                   & ((Impl A B) :: Gamma) = ((Impl A B) :: Gamma)
+                   & sc = sc
+                   & (well-formed dleft fr Gamma (some-succ A))
+                   & (well-formed dright fr (B :: Gamma) sc)))
+        }
+      (!chain<-
+        [(well-formed (l-arrow-rule fr Gamma A B sc dleft dright)
+                      fr ((Impl A B) :: Gamma) sc)
+          <== (fr = fr
+               & ((Impl A B) :: Gamma) = ((Impl A B) :: Gamma)
+               & sc = sc
+               & (well-formed dleft fr Gamma (some-succ A))
+               & (well-formed dright fr (B :: Gamma) sc))       [wf-l-arrow]])
+
+#============================================================================
+# THEOREM absurdity-core
+#============================================================================
+# The sequent  Var a, Neg(Var a) |-  is derivable in core-logic.
+#
+# Coq:
+#   intros a.
+#   apply (Exchange core_logic (Neg (Var a)) (Var a)).
+#   apply L_neg.
+#   apply Ax. left. reflexivity.
+#
+# Athena: build Ax, then L-neg, then Exchange, each via its method,
+# then close the existential with egen and conclude derivable.
+
+define absurdity-core :=
+  (forall ?a:Ide .
+    (derivable core-logic
+               ((Var ?a) :: ((Neg (Var ?a)) :: nil))
+               none-succ))
+
+conclude absurdity-core
+  pick-any a:Ide
+    let { # The three witness sub-trees, innermost first.
+          # Ax proves [Var a] |- Var a  (context is the singleton [Var a]).
+          ax-tree := (ax-rule core-logic
+                              ((Var a) :: nil)
+                              (Var a));
+          # L-neg removes Neg(Var a) at the head: from [Var a] |- Var a
+          # it concludes [Neg(Var a), Var a] |- .
+          lneg-tree := (l-neg-rule core-logic
+                                   ((Var a) :: nil)
+                                   (Var a)
+                                   ax-tree);
+          # Exchange swaps [Neg(Var a), Var a] into [Var a, Neg(Var a)].
+          exch-tree := (exchange-rule core-logic
+                                      (Neg (Var a))
+                                      (Var a)
+                                      none-succ
+                                      lneg-tree);
+          # Step 1: Ax is well-formed. Need (mem (Var a) [Var a]).
+          _ := (!chain->
+                 [((Var a) = (Var a))
+                   ==> (mem (Var a) ((Var a) :: nil))            [mem-def]]);
+          ax-wf := (!prove-ax-wf core-logic
+                                 ((Var a) :: nil)
+                                 (Var a));
+          # Step 2: L-neg is well-formed. Premiss ax-wf is in the base.
+          # fr = core-logic, Gamma = [Var a], phi = Var a, dprem = ax-tree.
+          # Conclusion context: [Neg(Var a), Var a].
+          lneg-wf := (!prove-l-neg-wf core-logic
+                                      ((Var a) :: nil)
+                                      (Var a)
+                                      ax-tree);
+          # Step 3: Exchange is well-formed, swapping [Neg(Var a), Var a]
+          # into [Var a, Neg(Var a)].
+          # fr = core-logic, xf = Neg(Var a), yf = Var a, sc = none-succ,
+          # dprem = lneg-tree. Premiss context [xf, yf] = [Neg(Var a), Var a]
+          # matches lneg-wf's conclusion.
+          exch-wf := (!prove-exchange-wf core-logic
+                                         (Neg (Var a))
+                                         (Var a)
+                                         none-succ
+                                         lneg-tree);
+          # Step 4: close the existential.
+          ex-fact := (!egen
+                       (exists ?d:Deriv .
+                          (well-formed ?d core-logic
+                                       ((Var a) :: ((Neg (Var a)) :: nil))
+                                       none-succ))
+                       exch-tree)
+        }
+      # Step 5: conclude derivable via derivable-def.
+      (!chain<-
+        [(derivable core-logic
+                    ((Var a) :: ((Neg (Var a)) :: nil))
+                    none-succ)
+          <== (exists ?d:Deriv .
+                 (well-formed ?d core-logic
+                              ((Var a) :: ((Neg (Var a)) :: nil))
+                              none-succ))                        [derivable-def]])
+
+#============================================================================
+# THEOREM DNS2-instantiated
+#============================================================================
+#         A, D |-                                      (premiss, here H)
+#    --------------------- DNS.2
+#    (A -> B) -> B, D |- B
+#
+# Instantiated at A = Var a, B = Var b, D = [Neg(Var a)].
+#
+# Coq:
+#   intros a b H.
+#   apply (L_arrow core_logic _ (Impl (Var a)(Var b))(Var b)(Some (Var b))).
+#   - apply R_arrow_core. assumption.
+#   - apply Ax. left. reflexivity.
+#
+# The derivation tree (root = L-arrow):
+#
+#   [Var a, Neg(Var a)] |-                       (= H)
+#   ------------------------------- R->C
+#   [Neg(Var a)] |- Var a -> Var b     [Var b, Neg(Var a)] |- Var b  (Ax)
+#   ---------------------------------------------------------------- L->
+#   [(Var a -> Var b) -> Var b, Neg(Var a)] |- Var b
+
+define DNS2-instantiated :=
+  (forall ?a:Ide ?b:Ide .
+    (derivable core-logic
+               ((Var ?a) :: ((Neg (Var ?a)) :: nil))
+               none-succ)
+    ==>
+    (derivable core-logic
+               ((Impl (Impl (Var ?a) (Var ?b)) (Var ?b))
+                 :: ((Neg (Var ?a)) :: nil))
+               (some-succ (Var ?b))))
+
+conclude DNS2-instantiated
+  pick-any a:Ide b:Ide
+    assume hyp := (derivable core-logic
+                             ((Var a) :: ((Neg (Var a)) :: nil))
+                             none-succ)
+      # Extract the witness derivation of the premiss A, D |- .
+      let { ex-prem := (!chain->
+                         [hyp
+                           ==> (exists ?d:Deriv .
+                                  (well-formed ?d core-logic
+                                       ((Var a) :: ((Neg (Var a)) :: nil))
+                                       none-succ))               [derivable-def]])
+          }
+        pick-witness w for ex-prem
+          # Now (well-formed w core-logic [Var a, Neg(Var a)] none-succ)
+          # is in the assumption base.
+          let { # Build the R->C sub-tree: from [Var a, Neg(Var a)] |-
+                # conclude [Neg(Var a)] |- Var a -> Var b.
+                rac-tree := (r-arrow-core-rule
+                               ((Neg (Var a)) :: nil)
+                               (Var a)
+                               (Var b)
+                               w);
+                rac-wf := (!prove-r-arrow-core-wf
+                             ((Neg (Var a)) :: nil)
+                             (Var a)
+                             (Var b)
+                             w);
+                # Build the Ax sub-tree: [Var b, Neg(Var a)] |- Var b.
+                ax-tree := (ax-rule core-logic
+                                    ((Var b) :: ((Neg (Var a)) :: nil))
+                                    (Var b));
+                _ := (!chain->
+                       [((Var b) = (Var b))
+                         ==> (mem (Var b)
+                                  ((Var b) :: ((Neg (Var a)) :: nil))) [mem-def]]);
+                ax-wf := (!prove-ax-wf core-logic
+                                       ((Var b) :: ((Neg (Var a)) :: nil))
+                                       (Var b));
+                # Build the L-> tree. The principal implication is
+                # (Var a -> Var b) -> Var b, so A = Var a -> Var b,
+                # B = Var b, context D = [Neg(Var a)], succedent
+                # some-succ(Var b).
+                larrow-tree := (l-arrow-rule core-logic
+                                             ((Neg (Var a)) :: nil)
+                                             (Impl (Var a) (Var b))
+                                             (Var b)
+                                             (some-succ (Var b))
+                                             rac-tree
+                                             ax-tree);
+                larrow-wf := (!prove-l-arrow-wf core-logic
+                                                ((Neg (Var a)) :: nil)
+                                                (Impl (Var a) (Var b))
+                                                (Var b)
+                                                (some-succ (Var b))
+                                                rac-tree
+                                                ax-tree);
+                ex-concl := (!egen
+                              (exists ?d:Deriv .
+                                 (well-formed ?d core-logic
+                                    ((Impl (Impl (Var a) (Var b)) (Var b))
+                                      :: ((Neg (Var a)) :: nil))
+                                    (some-succ (Var b))))
+                              larrow-tree)
+              }
+            (!chain<-
+              [(derivable core-logic
+                          ((Impl (Impl (Var a) (Var b)) (Var b))
+                            :: ((Neg (Var a)) :: nil))
+                          (some-succ (Var b)))
+                <== (exists ?d:Deriv .
+                       (well-formed ?d core-logic
+                          ((Impl (Impl (Var a) (Var b)) (Var b))
+                            :: ((Neg (Var a)) :: nil))
+                          (some-succ (Var b))))                 [derivable-def]])
+
+#============================================================================
+# LEMMA R-arrow-inv-NegA-min  (SKELETON with force placeholders)
+#============================================================================
+#    [Neg A] |- A -> B
+#    ----------------- R-arrow-inv (over singleton context)
+#    A, [Neg A] |- B
+#
+# Instantiated at A = Var a, B = Var b.
+#
+# Coq:
+#   intros a b H. remember ... induction H; intros ...
+#   - (Ax)            : injection/discriminate on succedent
+#   - (L_neg)         : discriminate HC  (succedent none vs some)
+#   - (R_arrow)       : injection HC; assumption   <-- productive case
+#   - (L_arrow)       : injection HG; discriminate (Neg A vs Impl)
+#   - (Exchange)      : discriminate HG  (singleton vs doubleton)
+#   - (R_arrow_core)  : discriminate Hf  (minimal-F vs core-logic)
+#
+# Strategy: assume the hypothesis, extract the witness derivation d by
+# pick-witness, then datatype-cases on d. Five branches are impossible
+# (closed by no-confusion), one (r-arrow-rule) is productive.
+#
+# We first validate the STRUCTURE with force placeholders, then replace
+# each force with the real proof, branch by branch.
+
+define R-arrow-inv-NegA-min :=
+  (forall ?a:Ide ?b:Ide .
+    (derivable minimal-F
+               ((Neg (Var ?a)) :: nil)
+               (some-succ (Impl (Var ?a) (Var ?b))))
+    ==>
+    (derivable minimal-F
+               ((Var ?a) :: ((Neg (Var ?a)) :: nil))
+               (some-succ (Var ?b))))
+
+conclude R-arrow-inv-NegA-min
+  pick-any a:Ide b:Ide
+    assume hyp := (derivable minimal-F
+                             ((Neg (Var a)) :: nil)
+                             (some-succ (Impl (Var a) (Var b))))
+      let { ex-d := (!chain->
+                      [hyp
+                        ==> (exists ?d:Deriv .
+                               (well-formed ?d minimal-F
+                                  ((Neg (Var a)) :: nil)
+                                  (some-succ (Impl (Var a) (Var b)))))
+                            [derivable-def]]);
+            goal := (derivable minimal-F
+                               ((Var a) :: ((Neg (Var a)) :: nil))
+                               (some-succ (Var b)))
+          }
+        # KEY STRUCTURAL POINT: datatype-cases substitutes the decomposed
+        # variable into the GOAL of the cases. So we must make that goal
+        # MENTION the variable. We prove the conditional property
+        #   (forall dd . well-formed dd minimal-F [Neg(Var a)]
+        #                  (some-succ(Impl(Var a)(Var b))) ==> goal)
+        # by cases on dd. In each branch dd is replaced by the constructor,
+        # the antecedent becomes its specialized form, and we assume it.
+        let { inv-prop :=
+                (forall ?dd:Deriv .
+                  (well-formed ?dd minimal-F
+                     ((Neg (Var a)) :: nil)
+                     (some-succ (Impl (Var a) (Var b))))
+                  ==> goal);
+              inv-proof :=
+                datatype-cases inv-prop {
+                    (ax-rule f0 G0 phi0) =>
+                      assume wfh := (well-formed (ax-rule f0 G0 phi0) minimal-F
+                                       ((Neg (Var a)) :: nil)
+                                       (some-succ (Impl (Var a) (Var b))))
+                        # wf-ax: succedent some-succ(Impl(Var a)(Var b)) =
+                        #   some-succ phi0 (so phi0 = Impl(Var a)(Var b)),
+                        #   G0 = [Neg(Var a)], and mem phi0 G0.
+                        # mem (Impl(Var a)(Var b)) [Neg(Var a)] reduces to
+                        #   Impl(Var a)(Var b) = Neg(Var a) (false) or
+                        #   mem ... nil (false). Contradiction.
+                        let { wf-ax-sent := (head wf-ax);
+                              bicond := (!uspec* wf-ax-sent
+                                          [phi0
+                                           G0
+                                           (some-succ (Impl (Var a) (Var b)))
+                                           f0
+                                           ((Neg (Var a)) :: nil)
+                                           minimal-F]);
+                              fwd := (!left-iff bicond);
+                              rhs := (!mp fwd wfh);
+                              # conjuncts: f0=minimal-F, G0=[Neg(Var a)],
+                              #   some-succ(Impl(Var a)(Var b))=some-succ phi0,
+                              #   mem phi0 G0
+                              phi0-eq := (!chain->
+                                           [(some-succ (Impl (Var a) (Var b))
+                                              = some-succ phi0)
+                                             ==> ((Impl (Var a) (Var b)) = phi0)
+                                                 [(datatype-axioms "Succedent")]]);
+                              # mem phi0 G0 with G0 = [Neg(Var a)] and
+                              # phi0 = Impl(Var a)(Var b):
+                              # rewrite mem phi0 G0 to mem (Impl..) [Neg(Var a)]
+                              G0-eq := (G0 = ((Neg (Var a)) :: nil));
+                              mem-fact := (!chain->
+                                            [(mem phi0 G0)
+                                              ==> (mem (Impl (Var a) (Var b))
+                                                       ((Neg (Var a)) :: nil))
+                                                  [phi0-eq G0-eq]]);
+                              # Unfold mem via mem-def: head case gives
+                              #   Impl(Var a)(Var b) = Neg(Var a) | mem .. nil
+                              mem-unfold := (!chain->
+                                              [(mem (Impl (Var a) (Var b))
+                                                    ((Neg (Var a)) :: nil))
+                                                ==> ((Impl (Var a) (Var b))
+                                                      = (Neg (Var a))
+                                                     | mem (Impl (Var a) (Var b))
+                                                           nil)
+                                                    [mem-def]]);
+                              # Both disjuncts are false:
+                              #  (1) Impl(Var a)(Var b) =/= Neg(Var a).
+                              # The Formula no-confusion axiom (head of the
+                              # list) is (forall x1 y1 y2 . Neg x1 =/= Impl y1 y2),
+                              # oriented Neg =/= Impl, so we instantiate and
+                              # symmetrize.
+                              neg-impl-noconf := (head (datatype-axioms "Formula"));
+                              ni-inst := (!instance neg-impl-noconf
+                                           [(Var a) (Var a) (Var b)]);
+                              # ni-inst : Neg(Var a) =/= Impl(Var a)(Var b)
+                              d1-false := (!sym ni-inst);
+                              # d1-false : Impl(Var a)(Var b) =/= Neg(Var a)
+                              #  (2) mem _ nil is false. The first clause of
+                              # mem-def is (forall A . ~ mem A nil); instantiate.
+                              mem-nil-clause := (head mem-def);
+                              d2-false := (!instance mem-nil-clause
+                                            [(Impl (Var a) (Var b))]);
+                              # Eliminate the disjunction: both disjuncts
+                              # contradict, so false.
+                              contra := (!cases mem-unfold
+                                          assume d1 := ((Impl (Var a) (Var b))
+                                                         = (Neg (Var a)))
+                                            (!absurd d1 d1-false)
+                                          assume d2 := (mem (Impl (Var a) (Var b))
+                                                            nil)
+                                            (!absurd d2 d2-false))
+                            }
+                          (!from-false goal)
+                  | (l-neg-rule f0 G0 A0 d0) =>
+                      assume wfh := (well-formed (l-neg-rule f0 G0 A0 d0) minimal-F
+                                       ((Neg (Var a)) :: nil)
+                                       (some-succ (Impl (Var a) (Var b))))
+                        let { wf-l-neg-sent := (head wf-l-neg);
+                              bicond := (!uspec* wf-l-neg-sent
+                                          [A0
+                                           G0
+                                           (some-succ (Impl (Var a) (Var b)))
+                                           d0
+                                           f0
+                                           ((Neg (Var a)) :: nil)
+                                           minimal-F]);
+                              fwd := (!left-iff bicond);
+                              rhs := (!mp fwd wfh);
+                              bad-eq := (some-succ (Impl (Var a) (Var b))
+                                          = none-succ);
+                              succ-noconf := (head (datatype-axioms "Succedent"));
+                              ineq1 := (!instance succ-noconf
+                                          [(Impl (Var a) (Var b))]);
+                              good-eq := (!sym ineq1);
+                              contra := (!absurd bad-eq good-eq)
+                            }
+                          (!from-false goal)
+                  | (r-arrow-rule f0 G0 A0 B0 d0) =>
+                      assume wfh := (well-formed (r-arrow-rule f0 G0 A0 B0 d0)
+                                       minimal-F
+                                       ((Neg (Var a)) :: nil)
+                                       (some-succ (Impl (Var a) (Var b))))
+                        let { wf-r-arrow-sent := (head wf-r-arrow);
+                              bicond := (!uspec* wf-r-arrow-sent
+                                          [A0
+                                           B0
+                                           G0
+                                           (some-succ (Impl (Var a) (Var b)))
+                                           d0
+                                           f0
+                                           ((Neg (Var a)) :: nil)
+                                           minimal-F]);
+                              fwd := (!left-iff bicond);
+                              rhs := (!mp fwd wfh);
+                              succ-eq := (some-succ (Impl (Var a) (Var b))
+                                           = some-succ (Impl A0 B0));
+                              impl-eq := (!chain->
+                                           [succ-eq
+                                             ==> ((Impl (Var a) (Var b))
+                                                   = (Impl A0 B0))
+                                                 [(datatype-axioms "Succedent")]]);
+                              a-eq := (!chain->
+                                        [impl-eq
+                                          ==> ((Var a) = A0)
+                                              [(datatype-axioms "Formula")]]);
+                              b-eq := (!chain->
+                                        [impl-eq
+                                          ==> ((Var b) = B0)
+                                              [(datatype-axioms "Formula")]]);
+                              premiss := (well-formed d0 f0 (A0 :: G0)
+                                            (some-succ B0));
+                              f0-eq := (f0 = minimal-F);
+                              G0-eq := (G0 = ((Neg (Var a)) :: nil));
+                              tp := (!chain->
+                                      [premiss
+                                        ==> (well-formed d0 minimal-F
+                                               ((Var a) :: ((Neg (Var a)) :: nil))
+                                               (some-succ (Var b)))
+                                            [f0-eq G0-eq a-eq b-eq]]);
+                              ex := (!egen
+                                      (exists ?d:Deriv .
+                                         (well-formed ?d minimal-F
+                                            ((Var a) :: ((Neg (Var a)) :: nil))
+                                            (some-succ (Var b))))
+                                      d0)
+                            }
+                          (!chain<-
+                            [goal
+                              <== (exists ?d:Deriv .
+                                     (well-formed ?d minimal-F
+                                        ((Var a) :: ((Neg (Var a)) :: nil))
+                                        (some-succ (Var b))))     [derivable-def]])
+                  | (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2) =>
+                      assume wfh := (well-formed
+                                       (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2)
+                                       minimal-F
+                                       ((Neg (Var a)) :: nil)
+                                       (some-succ (Impl (Var a) (Var b))))
+                        let { wf-l-arrow-sent := (head wf-l-arrow);
+                              bicond := (!uspec* wf-l-arrow-sent
+                                          [A0
+                                           B0
+                                           G0
+                                           f0
+                                           ((Neg (Var a)) :: nil)
+                                           (some-succ (Impl (Var a) (Var b)))
+                                           sc0
+                                           d1
+                                           d2
+                                           minimal-F]);
+                              fwd := (!left-iff bicond);
+                              rhs := (!mp fwd wfh);
+                              ctx-eq := ((Neg (Var a)) :: nil
+                                          = ((Impl A0 B0) :: G0));
+                              head-eq := (!chain->
+                                           [ctx-eq
+                                             ==> ((Neg (Var a)) = (Impl A0 B0))
+                                                 [(datatype-axioms "List")]]);
+                              # No-confusion: Neg(Var a) =/= Impl A0 B0.
+                              # The axiom is oriented Neg =/= Impl, so direct.
+                              neg-impl-noconf := (head (datatype-axioms "Formula"));
+                              head-noconf := (!instance neg-impl-noconf
+                                               [(Var a) A0 B0]);
+                              contra := (!absurd head-eq head-noconf)
+                            }
+                          (!from-false goal)
+                  | (exchange-rule f0 xf0 yf0 sc0 d0) =>
+                      assume wfh := (well-formed
+                                       (exchange-rule f0 xf0 yf0 sc0 d0)
+                                       minimal-F
+                                       ((Neg (Var a)) :: nil)
+                                       (some-succ (Impl (Var a) (Var b))))
+                        let { wf-exchange-sent := (head wf-exchange);
+                              bicond := (!uspec* wf-exchange-sent
+                                          [d0
+                                           f0
+                                           xf0
+                                           yf0
+                                           ((Neg (Var a)) :: nil)
+                                           (some-succ (Impl (Var a) (Var b)))
+                                           sc0
+                                           minimal-F]);
+                              fwd := (!left-iff bicond);
+                              rhs := (!mp fwd wfh);
+                              ctx-eq := ((Neg (Var a)) :: nil
+                                          = (yf0 :: (xf0 :: nil)));
+                              tail-eq := (!chain->
+                                           [ctx-eq
+                                             ==> (nil = (xf0 :: nil))
+                                                 [(datatype-axioms "List")]]);
+                              nil-noconf := (!chain->
+                                              [true
+                                                ==> (nil =/= (xf0 :: nil))
+                                                    [(datatype-axioms "List")]]);
+                              contra := (!absurd tail-eq nil-noconf)
+                            }
+                          (!from-false goal)
+                  | (r-arrow-core-rule G0 A0 B0 d0) =>
+                      assume wfh := (well-formed
+                                       (r-arrow-core-rule G0 A0 B0 d0)
+                                       minimal-F
+                                       ((Neg (Var a)) :: nil)
+                                       (some-succ (Impl (Var a) (Var b))))
+                        let { wf-rac-sent := (head wf-r-arrow-core);
+                              bicond := (!uspec* wf-rac-sent
+                                          [A0
+                                           B0
+                                           G0
+                                           (some-succ (Impl (Var a) (Var b)))
+                                           d0
+                                           ((Neg (Var a)) :: nil)
+                                           minimal-F]);
+                              fwd := (!left-iff bicond);
+                              rhs := (!mp fwd wfh);
+                              bad-eq := (minimal-F = core-logic);
+                              # Fragment no-confusion: minimal-F =/= core-logic.
+                              # Both constructors are constants, so the axiom
+                              # has no quantifier; take it directly as head.
+                              good-eq := (head (datatype-axioms "Fragment"));
+                              contra := (!absurd bad-eq good-eq)
+                            }
+                          (!from-false goal)
+                }
+            }
+          # inv-proof : (forall ?dd . well-formed ?dd minimal-F [Neg(Var a)]
+          #               (some-succ(Impl(Var a)(Var b))) ==> goal)
+          # Extract the witness derivation w from ex-d, naming the witness
+          # premise wf-w, then instantiate inv-proof at w and apply mp.
+          pick-witness w for ex-d wf-w
+            (!mp (!uspec inv-proof w) wf-w)
+
+
+#============================================================================
+# LEMMA DNS1-inv-instantiated  (PLACEHOLDER with force)
+#============================================================================
+#    (A -> B) -> B, D |- B
+#    --------------------- DNS1-inv
+#         A, D |- B
+#
+# Instantiated at A = Var a, B = Var b, D = [Neg(Var a)].
+#
+# In Coq this requires generalizing over both orderings of the doubleton
+# context (the Hgen lemma) to absorb the Exchange case. We will fill this
+# in after validating the final assembly. For now, force the goal.
+
+define DNS1-inv-instantiated :=
+  (forall ?a:Ide ?b:Ide .
+    (derivable minimal-F
+               ((Impl (Impl (Var ?a) (Var ?b)) (Var ?b))
+                 :: ((Neg (Var ?a)) :: nil))
+               (some-succ (Var ?b)))
+    ==>
+    (derivable minimal-F
+               ((Var ?a) :: ((Neg (Var ?a)) :: nil))
+               (some-succ (Var ?b))))
+
+# Strategy (following Coq's Hgen): we prove a generalized property by
+# induction on the derivation tree dd, with the context allowed to be
+# EITHER ordering of the doubleton. The disjunction on the context is
+# what lets the Exchange case feed the induction hypothesis with the
+# permuted ordering.
+#
+# Abbreviations for the two context orderings and the goal:
+#   ord1 = [(A->B)->B, Neg A]   ord2 = [Neg A, (A->B)->B]
+#   target = derivable minimal-F [Var a, Neg A] (some Var b)
+
+conclude DNS1-inv-instantiated
+  pick-any a:Ide b:Ide
+    let { impl-formula := (Impl (Impl (Var a) (Var b)) (Var b));
+          ord1 := (impl-formula :: ((Neg (Var a)) :: nil));
+          ord2 := ((Neg (Var a)) :: (impl-formula :: nil));
+          target := (derivable minimal-F
+                               ((Var a) :: ((Neg (Var a)) :: nil))
+                               (some-succ (Var b)));
+          # The generalized property, quantified over the derivation dd.
+          Hgen :=
+            (forall ?dd:Deriv .
+              ((well-formed ?dd minimal-F ord1 (some-succ (Var b)))
+               | (well-formed ?dd minimal-F ord2 (some-succ (Var b))))
+              ==> target);
+          # SKELETON: prove Hgen by induction on dd, force each branch.
+          Hgen-proof :=
+            by-induction Hgen {
+                (ax-rule f0 G0 phi0) =>
+                  # Ax concludes some-succ phi0; matching some-succ(Var b)
+                  # gives phi0 = Var b, and requires mem (Var b) G0 where G0
+                  # is the (ordered) context. In ord1 = [(A->B)->B, Neg A]
+                  # and ord2 = [Neg A, (A->B)->B], Var b is neither element,
+                  # so membership reduces to a false disjunction.
+                  assume disj :=
+                    ((well-formed (ax-rule f0 G0 phi0) minimal-F ord1
+                       (some-succ (Var b)))
+                     | (well-formed (ax-rule f0 G0 phi0) minimal-F ord2
+                         (some-succ (Var b))))
+                    let { wf-ax-sent := (head wf-ax);
+                          mem-nil-clause := (head mem-def);
+                          # helper inequalities we will need:
+                          #   Var b =/= Impl((A->B),B)  [= (A->B)->B head of ord1]
+                          #   Var b =/= Neg(Var a)
+                          vb-neq-impl := (!instance var-neq-impl
+                                           [b (Impl (Var a) (Var b)) (Var b)]);
+                          # var-neq-neg : (forall x1:Ide y1 . Var x1 =/= Neg y1)
+                          vb-neq-neg := (!instance var-neq-neg [b (Var a)]) }
+                      (!cases disj
+                        (assume w1 := (well-formed (ax-rule f0 G0 phi0)
+                                        minimal-F ord1 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-ax-sent
+                                            [phi0 G0 (some-succ (Var b))
+                                             f0 ord1 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w1);
+                                # phi0 = Var b
+                                phi0-eq := (!chain->
+                                             [(some-succ (Var b)
+                                                = some-succ phi0)
+                                               ==> ((Var b) = phi0)
+                                                   [(datatype-axioms "Succedent")]]);
+                                G0-eq := (G0 = ord1);
+                                mem-fact := (!chain->
+                                              [(mem phi0 G0)
+                                                ==> (mem (Var b) ord1)
+                                                    [phi0-eq G0-eq]]);
+                                # unfold mem on ord1 = impl-formula :: [Neg a]
+                                mem-u1 := (!chain->
+                                            [(mem (Var b) ord1)
+                                              ==> ((Var b) = impl-formula
+                                                   | mem (Var b)
+                                                         ((Neg (Var a)) :: nil))
+                                                  [mem-def]]);
+                                contra :=
+                                  (!cases mem-u1
+                                    (assume e1 := ((Var b) = impl-formula)
+                                      (!absurd e1 vb-neq-impl))
+                                    (assume e2 := (mem (Var b)
+                                                       ((Neg (Var a)) :: nil))
+                                      let { mem-u2 := (!chain->
+                                                        [e2
+                                                          ==> ((Var b)
+                                                                = (Neg (Var a))
+                                                               | mem (Var b) nil)
+                                                              [mem-def]]) }
+                                        (!cases mem-u2
+                                          (assume e3 := ((Var b) = (Neg (Var a)))
+                                            (!absurd e3 vb-neq-neg))
+                                          (assume e4 := (mem (Var b) nil)
+                                            (!absurd e4
+                                              (!instance mem-nil-clause
+                                                [(Var b)])))))) }
+                            (!from-false target))
+                        (assume w2 := (well-formed (ax-rule f0 G0 phi0)
+                                        minimal-F ord2 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-ax-sent
+                                            [phi0 G0 (some-succ (Var b))
+                                             f0 ord2 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w2);
+                                phi0-eq := (!chain->
+                                             [(some-succ (Var b)
+                                                = some-succ phi0)
+                                               ==> ((Var b) = phi0)
+                                                   [(datatype-axioms "Succedent")]]);
+                                G0-eq := (G0 = ord2);
+                                mem-fact := (!chain->
+                                              [(mem phi0 G0)
+                                                ==> (mem (Var b) ord2)
+                                                    [phi0-eq G0-eq]]);
+                                # unfold mem on ord2 = Neg a :: [impl-formula]
+                                mem-u1 := (!chain->
+                                            [(mem (Var b) ord2)
+                                              ==> ((Var b) = (Neg (Var a))
+                                                   | mem (Var b)
+                                                         (impl-formula :: nil))
+                                                  [mem-def]]);
+                                contra :=
+                                  (!cases mem-u1
+                                    (assume e1 := ((Var b) = (Neg (Var a)))
+                                      (!absurd e1 vb-neq-neg))
+                                    (assume e2 := (mem (Var b)
+                                                       (impl-formula :: nil))
+                                      let { mem-u2 := (!chain->
+                                                        [e2
+                                                          ==> ((Var b)
+                                                                = impl-formula
+                                                               | mem (Var b) nil)
+                                                              [mem-def]]) }
+                                        (!cases mem-u2
+                                          (assume e3 := ((Var b) = impl-formula)
+                                            (!absurd e3 vb-neq-impl))
+                                          (assume e4 := (mem (Var b) nil)
+                                            (!absurd e4
+                                              (!instance mem-nil-clause
+                                                [(Var b)])))))) }
+                            (!from-false target)))
+              | (l-neg-rule f0 G0 A0 d0) =>
+                  # L-neg forces succedent none-succ, contradicting the
+                  # target succedent some-succ(Var b). Closes in both
+                  # orderings identically.
+                  assume disj :=
+                    ((well-formed (l-neg-rule f0 G0 A0 d0) minimal-F ord1
+                       (some-succ (Var b)))
+                     | (well-formed (l-neg-rule f0 G0 A0 d0) minimal-F ord2
+                         (some-succ (Var b))))
+                    let { wf-l-neg-sent := (head wf-l-neg);
+                          succ-noconf := (head (datatype-axioms "Succedent")) }
+                      (!cases disj
+                        (assume w1 := (well-formed (l-neg-rule f0 G0 A0 d0)
+                                        minimal-F ord1 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-l-neg-sent
+                                            [A0 G0 (some-succ (Var b))
+                                             d0 f0 ord1 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w1);
+                                bad-eq := (some-succ (Var b) = none-succ);
+                                good-eq := (!sym (!instance succ-noconf
+                                             [(Var b)]));
+                                contra := (!absurd bad-eq good-eq) }
+                            (!from-false target))
+                        (assume w2 := (well-formed (l-neg-rule f0 G0 A0 d0)
+                                        minimal-F ord2 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-l-neg-sent
+                                            [A0 G0 (some-succ (Var b))
+                                             d0 f0 ord2 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w2);
+                                bad-eq := (some-succ (Var b) = none-succ);
+                                good-eq := (!sym (!instance succ-noconf
+                                             [(Var b)]));
+                                contra := (!absurd bad-eq good-eq) }
+                            (!from-false target)))
+              | (r-arrow-rule f0 G0 A0 B0 d0) =>
+                  # R-arrow concludes succedent some-succ(Impl A0 B0), but
+                  # target succedent is some-succ(Var b). Impl =/= Var by
+                  # Formula no-confusion. Closes identically in both orders.
+                  assume disj :=
+                    ((well-formed (r-arrow-rule f0 G0 A0 B0 d0) minimal-F ord1
+                       (some-succ (Var b)))
+                     | (well-formed (r-arrow-rule f0 G0 A0 B0 d0) minimal-F ord2
+                         (some-succ (Var b))))
+                    let { wf-r-arrow-sent := (head wf-r-arrow) }
+                      (!cases disj
+                        (assume w1 := (well-formed (r-arrow-rule f0 G0 A0 B0 d0)
+                                        minimal-F ord1 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-r-arrow-sent
+                                            [A0 B0 G0 (some-succ (Var b))
+                                             d0 f0 ord1 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w1);
+                                vimpl-eq := (!chain->
+                                              [(some-succ (Var b)
+                                                 = some-succ (Impl A0 B0))
+                                                ==> ((Var b) = (Impl A0 B0))
+                                                    [(datatype-axioms "Succedent")]]);
+                                vimpl-noconf := (!instance var-neq-impl
+                                                  [b A0 B0]);
+                                contra := (!absurd vimpl-eq vimpl-noconf) }
+                            (!from-false target))
+                        (assume w2 := (well-formed (r-arrow-rule f0 G0 A0 B0 d0)
+                                        minimal-F ord2 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-r-arrow-sent
+                                            [A0 B0 G0 (some-succ (Var b))
+                                             d0 f0 ord2 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w2);
+                                vimpl-eq := (!chain->
+                                              [(some-succ (Var b)
+                                                 = some-succ (Impl A0 B0))
+                                                ==> ((Var b) = (Impl A0 B0))
+                                                    [(datatype-axioms "Succedent")]]);
+                                vimpl-noconf := (!instance var-neq-impl
+                                                  [b A0 B0]);
+                                contra := (!absurd vimpl-eq vimpl-noconf) }
+                            (!from-false target)))
+              | (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2) =>
+                  # L-arrow: context head must be Impl A0 B0.
+                  #  ord1 = [(A->B)->B, Neg A]: head (A->B)->B matches
+                  #    Impl A0 B0, giving A0=(A->B), B0=Var b, G0=[Neg A].
+                  #    The LEFT premiss d1 is then [Neg A] |- (A->B), which
+                  #    is exactly the hypothesis of R-arrow-inv-NegA-min,
+                  #    yielding target.  (Coq: apply R_arrow_inv_NegA_min.)
+                  #  ord2 = [Neg A, (A->B)->B]: head Neg A vs Impl A0 B0,
+                  #    impossible by Formula no-confusion.
+                  assume disj :=
+                    ((well-formed (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2) minimal-F
+                       ord1 (some-succ (Var b)))
+                     | (well-formed (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2) minimal-F
+                         ord2 (some-succ (Var b))))
+                    let { wf-l-arrow-sent := (head wf-l-arrow);
+                          rinv-ab := (!uspec (!uspec R-arrow-inv-NegA-min a) b) }
+                      (!cases disj
+                        # --- ordre 1 : PRODUCTIVE via R-arrow-inv ---
+                        (assume w1 := (well-formed
+                                        (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2)
+                                        minimal-F ord1 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-l-arrow-sent
+                                            [A0 B0 G0 f0 ord1
+                                             (some-succ (Var b)) sc0 d1 d2
+                                             minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w1);
+                                # context constraint: ord1 = (Impl A0 B0) :: G0
+                                ctx-eq := (ord1 = ((Impl A0 B0) :: G0));
+                                # head: impl-formula = Impl A0 B0
+                                head-eq := (!chain->
+                                             [ctx-eq
+                                               ==> (impl-formula = (Impl A0 B0))
+                                                   [(datatype-axioms "List")]]);
+                                # tail: [Neg(Var a)] = G0
+                                tail-eq := (!chain->
+                                             [ctx-eq
+                                               ==> (((Neg (Var a)) :: nil) = G0)
+                                                   [(datatype-axioms "List")]]);
+                                # injectivity of Impl on impl-formula:
+                                #   Impl(Impl(Var a)(Var b))(Var b) = Impl A0 B0
+                                #   gives A0 = Impl(Var a)(Var b), B0 = Var b
+                                A0-eq := (!chain->
+                                           [head-eq
+                                             ==> ((Impl (Var a) (Var b)) = A0)
+                                                 [(datatype-axioms "Formula")]]);
+                                # left premiss: well-formed d1 f0 G0 (some-succ A0)
+                                left-prem := (well-formed d1 f0 G0
+                                               (some-succ A0));
+                                # rewrite it to [Neg a] |- (A->B):
+                                f0-eq := (f0 = minimal-F);
+                                left-prem-rw := (!chain->
+                                                  [left-prem
+                                                    ==> (well-formed d1 minimal-F
+                                                          ((Neg (Var a)) :: nil)
+                                                          (some-succ
+                                                            (Impl (Var a)
+                                                                  (Var b))))
+                                                        [f0-eq tail-eq A0-eq]]);
+                                # turn into a derivable, then apply R-arrow-inv
+                                ex-left := (!egen
+                                             (exists ?d:Deriv .
+                                                (well-formed ?d minimal-F
+                                                   ((Neg (Var a)) :: nil)
+                                                   (some-succ
+                                                     (Impl (Var a) (Var b)))))
+                                             d1);
+                                deriv-left := (!chain<-
+                                                [(derivable minimal-F
+                                                    ((Neg (Var a)) :: nil)
+                                                    (some-succ
+                                                      (Impl (Var a) (Var b))))
+                                                  <== (exists ?d:Deriv .
+                                                         (well-formed ?d minimal-F
+                                                            ((Neg (Var a)) :: nil)
+                                                            (some-succ
+                                                              (Impl (Var a)
+                                                                    (Var b)))))
+                                                      [derivable-def]]) }
+                            (!mp rinv-ab deriv-left))
+                        # --- ordre 2 : impossible (Neg vs Impl) ---
+                        (assume w2 := (well-formed
+                                        (l-arrow-rule f0 G0 A0 B0 sc0 d1 d2)
+                                        minimal-F ord2 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-l-arrow-sent
+                                            [A0 B0 G0 f0 ord2
+                                             (some-succ (Var b)) sc0 d1 d2
+                                             minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w2);
+                                ctx-eq := (ord2 = ((Impl A0 B0) :: G0));
+                                # head of ord2 is Neg(Var a)
+                                head-eq := (!chain->
+                                             [ctx-eq
+                                               ==> ((Neg (Var a)) = (Impl A0 B0))
+                                                   [(datatype-axioms "List")]]);
+                                head-noconf := (!instance neg-neq-impl
+                                                 [(Var a) A0 B0]);
+                                contra := (!absurd head-eq head-noconf) }
+                            (!from-false target)))
+              | (exchange-rule f0 xf0 yf0 sc0 d0) =>
+                  # Exchange: conclusion context [yf0, xf0], premiss context
+                  # [xf0, yf0] (permuted). The induction hypothesis ih on d0
+                  # covers BOTH orderings via the disjunction, which is
+                  # exactly what lets us feed it the permuted premiss.
+                  #  ord1 = [(A->B)->B, Neg A] = [yf0, xf0]
+                  #    => yf0=(A->B)->B, xf0=Neg A, premiss ctx [xf0,yf0]=ord2
+                  #    => feed ih via RIGHT disjunct.
+                  #  ord2 = [Neg A, (A->B)->B] = [yf0, xf0]
+                  #    => premiss ctx [xf0,yf0]=ord1 => feed ih via LEFT.
+                  let { ih := (((well-formed d0 minimal-F ord1
+                                  (some-succ (Var b)))
+                                | (well-formed d0 minimal-F ord2
+                                    (some-succ (Var b))))
+                               ==> target);
+                        wf-exchange-sent := (head wf-exchange) }
+                    assume disj :=
+                      ((well-formed (exchange-rule f0 xf0 yf0 sc0 d0) minimal-F
+                         ord1 (some-succ (Var b)))
+                       | (well-formed (exchange-rule f0 xf0 yf0 sc0 d0) minimal-F
+                           ord2 (some-succ (Var b))))
+                      (!cases disj
+                        # --- conclusion on ord1; premiss on ord2 ---
+                        (assume w1 := (well-formed
+                                        (exchange-rule f0 xf0 yf0 sc0 d0)
+                                        minimal-F ord1 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-exchange-sent
+                                            [d0 f0 xf0 yf0 ord1
+                                             (some-succ (Var b)) sc0 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w1);
+                                # constraints: ord1 = (yf0 :: xf0 :: nil),
+                                #   sc0 = some-succ(Var b),
+                                #   premiss: well-formed d0 f0 (xf0::yf0::nil) sc0
+                                ctx-eq := (ord1 = (yf0 :: (xf0 :: nil)));
+                                # yf0 = impl-formula, xf0 = Neg(Var a)
+                                yf0-eq := (!chain->
+                                            [ctx-eq
+                                              ==> (impl-formula = yf0)
+                                                  [(datatype-axioms "List")]]);
+                                tail-c := (!chain->
+                                            [ctx-eq
+                                              ==> (((Neg (Var a)) :: nil)
+                                                    = (xf0 :: nil))
+                                                  [(datatype-axioms "List")]]);
+                                xf0-eq := (!chain->
+                                            [tail-c
+                                              ==> ((Neg (Var a)) = xf0)
+                                                  [(datatype-axioms "List")]]);
+                                sc0-eq := (sc0 = (some-succ (Var b)));
+                                f0-eq := (f0 = minimal-F);
+                                premiss := (well-formed d0 f0
+                                             (xf0 :: (yf0 :: nil)) sc0);
+                                # rewrite premiss to well-formed d0 minimal-F
+                                #   ord2 (some-succ(Var b))
+                                #   since [xf0,yf0] = [Neg a, impl-formula] = ord2
+                                premiss-rw := (!chain->
+                                                [premiss
+                                                  ==> (well-formed d0 minimal-F
+                                                        ord2 (some-succ (Var b)))
+                                                      [f0-eq sc0-eq
+                                                       xf0-eq yf0-eq]]);
+                                disj-for-ih := (!right-either
+                                                 (well-formed d0 minimal-F ord1
+                                                   (some-succ (Var b)))
+                                                 premiss-rw) }
+                            (!mp ih disj-for-ih))
+                        # --- conclusion on ord2; premiss on ord1 ---
+                        (assume w2 := (well-formed
+                                        (exchange-rule f0 xf0 yf0 sc0 d0)
+                                        minimal-F ord2 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-exchange-sent
+                                            [d0 f0 xf0 yf0 ord2
+                                             (some-succ (Var b)) sc0 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w2);
+                                ctx-eq := (ord2 = (yf0 :: (xf0 :: nil)));
+                                yf0-eq := (!chain->
+                                            [ctx-eq
+                                              ==> ((Neg (Var a)) = yf0)
+                                                  [(datatype-axioms "List")]]);
+                                tail-c := (!chain->
+                                            [ctx-eq
+                                              ==> ((impl-formula :: nil)
+                                                    = (xf0 :: nil))
+                                                  [(datatype-axioms "List")]]);
+                                xf0-eq := (!chain->
+                                            [tail-c
+                                              ==> (impl-formula = xf0)
+                                                  [(datatype-axioms "List")]]);
+                                sc0-eq := (sc0 = (some-succ (Var b)));
+                                f0-eq := (f0 = minimal-F);
+                                premiss := (well-formed d0 f0
+                                             (xf0 :: (yf0 :: nil)) sc0);
+                                # [xf0,yf0] = [impl-formula, Neg a] = ord1
+                                premiss-rw := (!chain->
+                                                [premiss
+                                                  ==> (well-formed d0 minimal-F
+                                                        ord1 (some-succ (Var b)))
+                                                      [f0-eq sc0-eq
+                                                       xf0-eq yf0-eq]]);
+                                disj-for-ih := (!left-either
+                                                 premiss-rw
+                                                 (well-formed d0 minimal-F ord2
+                                                   (some-succ (Var b)))) }
+                            (!mp ih disj-for-ih)))
+              | (r-arrow-core-rule G0 A0 B0 d0) =>
+                  # R-arrow-core forces fragment core-logic, contradicting
+                  # minimal-F. Closes identically in both orders.
+                  assume disj :=
+                    ((well-formed (r-arrow-core-rule G0 A0 B0 d0) minimal-F
+                       ord1 (some-succ (Var b)))
+                     | (well-formed (r-arrow-core-rule G0 A0 B0 d0) minimal-F
+                         ord2 (some-succ (Var b))))
+                    let { wf-rac-sent := (head wf-r-arrow-core);
+                          frag-noconf := (head (datatype-axioms "Fragment")) }
+                      (!cases disj
+                        (assume w1 := (well-formed (r-arrow-core-rule G0 A0 B0 d0)
+                                        minimal-F ord1 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-rac-sent
+                                            [A0 B0 G0 (some-succ (Var b))
+                                             d0 ord1 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w1);
+                                bad-eq := (minimal-F = core-logic);
+                                contra := (!absurd bad-eq frag-noconf) }
+                            (!from-false target))
+                        (assume w2 := (well-formed (r-arrow-core-rule G0 A0 B0 d0)
+                                        minimal-F ord2 (some-succ (Var b)))
+                          let { bicond := (!uspec* wf-rac-sent
+                                            [A0 B0 G0 (some-succ (Var b))
+                                             d0 ord2 minimal-F]);
+                                rhs := (!mp (!left-iff bicond) w2);
+                                bad-eq := (minimal-F = core-logic);
+                                contra := (!absurd bad-eq frag-noconf) }
+                            (!from-false target)))
+            }
+        }
+      # Apply Hgen: from hyp (derivable on ord1), extract a witness, feed
+      # it to Hgen via the left disjunct.
+      assume hyp := (derivable minimal-F ord1 (some-succ (Var b)))
+        let { ex-d := (!chain->
+                        [hyp
+                          ==> (exists ?d:Deriv .
+                                 (well-formed ?d minimal-F ord1
+                                    (some-succ (Var b))))
+                              [derivable-def]]) }
+          pick-witness w for ex-d wf-w
+            let { disj := (!left-either
+                            (well-formed w minimal-F ord1 (some-succ (Var b)))
+                            (well-formed w minimal-F ord2 (some-succ (Var b)))) }
+              (!mp (!uspec Hgen-proof w) disj)
+
+#============================================================================
+# THEOREM DNS1-anti-instantiated
+#============================================================================
+#         A, D !|- B
+#    --------------------- DNS.1-anti
+#    (A -> B) -> B, D !|- B
+#
+# Antisequents encoded as (derivable ... ==> false), following the Coq
+# convention. Direct consequence of DNS1-inv by contraposition.
+#
+# Coq:
+#   intros a b H1 H2.
+#   apply H1. apply DNS1_inv_instantiated. assumption.
+
+define DNS1-anti-instantiated :=
+  (forall ?a:Ide ?b:Ide .
+    ((derivable minimal-F
+                ((Var ?a) :: ((Neg (Var ?a)) :: nil))
+                (some-succ (Var ?b))) ==> false)
+    ==>
+    ((derivable minimal-F
+                ((Impl (Impl (Var ?a) (Var ?b)) (Var ?b))
+                  :: ((Neg (Var ?a)) :: nil))
+                (some-succ (Var ?b))) ==> false))
+
+conclude DNS1-anti-instantiated
+  pick-any a:Ide b:Ide
+    assume H1 := ((derivable minimal-F
+                             ((Var a) :: ((Neg (Var a)) :: nil))
+                             (some-succ (Var b))) ==> false)
+      assume H2 := (derivable minimal-F
+                              ((Impl (Impl (Var a) (Var b)) (Var b))
+                                :: ((Neg (Var a)) :: nil))
+                              (some-succ (Var b)))
+        # From H2, by DNS1-inv, get A,D |- B; then H1 gives false.
+        let { dns1-inv-ab := (!uspec (!uspec DNS1-inv-instantiated a) b);
+              premiss-deriv := (!mp dns1-inv-ab H2) }
+          (!mp H1 premiss-deriv)
+
+#============================================================================
+# AXIOMS
+#============================================================================
+# Claim1-Tennant: Tennant's own claim that in Core Logic the antisequent
+# Neg A, A !|- B holds for every A, B (Core Logic, p. 156).
+
+assert Claim1-Tennant :=
+  (forall ?a:Ide ?b:Ide .
+    (derivable core-logic
+               ((Var ?a) :: ((Neg (Var ?a)) :: nil))
+               (some-succ (Var ?b))) ==> false)
+
+# min-antisequent-rule-to-core: any antisequent rule established by
+# induction on the rules of F shared by M and C transfers from minimal-F
+# to core-logic.
+
+assert min-antisequent-rule-to-core :=
+  (forall ?G:(List Formula) ?G2:(List Formula)
+          ?C:Succedent ?C2:Succedent .
+    (((derivable minimal-F ?G ?C) ==> false)
+     ==> ((derivable minimal-F ?G2 ?C2) ==> false))
+    ==>
+    (((derivable core-logic ?G ?C) ==> false)
+     ==> ((derivable core-logic ?G2 ?C2) ==> false)))
+
+#============================================================================
+# THEOREM claim1-false
+#============================================================================
+# The final contradiction. Schema (paper Section 2.6):
+#   (1) DNS.1-anti (in minimal-F) lifted to core-logic by
+#       min-antisequent-rule-to-core.
+#   (2) Applied to Claim1-Tennant: the fatal antisequent
+#       Neg A, (A->B)->B !|- B in core-logic.
+#   (3) DNS2-instantiated applied to absurdity-core: the sequent
+#       Neg A, (A->B)->B |- B in core-logic.
+#   (4) (2) and (3) contradict: false.
+#
+# Coq:
+#   intros a b.
+#   assert (Hanti_core := min_antisequent_rule_to_core
+#                           (DNS1_anti_instantiated a b)).
+#   apply (Hanti_core (Claim1_Tennant a b)).
+#   apply DNS2_instantiated. apply absurdity_core.
+
+define claim1-false :=
+  (forall ?a:Ide ?b:Ide . false)
+
+conclude claim1-false
+  pick-any a:Ide b:Ide
+    let { # DNS1-anti at a, b: the minimal-F antisequent rule.
+          dns1-anti-ab := (!uspec (!uspec DNS1-anti-instantiated a) b);
+          # Lift to core-logic via the transfer axiom. Instantiate
+          # min-antisequent-rule-to-core at the relevant G, G', C, C'.
+          transfer-inst :=
+            (!uspec* min-antisequent-rule-to-core
+              [((Var a) :: ((Neg (Var a)) :: nil))
+               ((Impl (Impl (Var a) (Var b)) (Var b))
+                 :: ((Neg (Var a)) :: nil))
+               (some-succ (Var b))
+               (some-succ (Var b))]);
+          # transfer-inst : (minimal-F antisequent rule) ==>
+          #                 (core-logic antisequent rule)
+          Hanti-core := (!mp transfer-inst dns1-anti-ab);
+          # Hanti-core : (derivable core-logic [Var a, Neg(Var a)] (some b)
+          #                ==> false)
+          #              ==> (derivable core-logic [(A->B)->B, Neg(Var a)]
+          #                    (some b) ==> false)
+          # Claim1-Tennant at a, b.
+          claim1-ab := (!uspec (!uspec Claim1-Tennant a) b);
+          # Apply Hanti-core to Claim1: the fatal antisequent.
+          fatal-anti := (!mp Hanti-core claim1-ab);
+          # fatal-anti : derivable core-logic [(A->B)->B, Neg(Var a)] (some b)
+          #               ==> false
+          # Now derive the sequent via DNS2 applied to absurdity-core.
+          absurd-ab := (!uspec absurdity-core a);
+          dns2-ab := (!uspec (!uspec DNS2-instantiated a) b);
+          seq-deriv := (!mp dns2-ab absurd-ab)
+          # seq-deriv : derivable core-logic [(A->B)->B, Neg(Var a)] (some b)
+        }
+      # Contradiction: fatal-anti applied to seq-deriv.
+      (!mp fatal-anti seq-deriv)
