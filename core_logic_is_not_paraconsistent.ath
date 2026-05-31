@@ -1365,9 +1365,9 @@ conclude DNS1-inv-instantiated
 #============================================================================
 # THEOREM DNS1-anti-instantiated
 #============================================================================
-#         A, D !|- B
+#         A, D |/- B
 #    --------------------- DNS.1-anti
-#    (A -> B) -> B, D !|- B
+#    (A -> B) -> B, D |/- B
 #
 # Antisequents encoded as (derivable ... ==> false), following the Coq
 # convention. Direct consequence of DNS1-inv by contraposition.
@@ -1405,7 +1405,7 @@ conclude DNS1-anti-instantiated
 # AXIOMS
 #============================================================================
 # Claim1-Tennant: Tennant's own claim that in Core Logic the antisequent
-# Neg A, A !|- B holds for every A, B (Core Logic, p. 156).
+# Neg A, A |/- B holds for every A, B (Core Logic, p. 156).
 
 assert Claim1-Tennant :=
   (forall ?a:Ide ?b:Ide .
@@ -1433,7 +1433,7 @@ assert min-antisequent-rule-to-core :=
 #   (1) DNS.1-anti (in minimal-F) lifted to core-logic by
 #       min-antisequent-rule-to-core.
 #   (2) Applied to Claim1-Tennant: the fatal antisequent
-#       Neg A, (A->B)->B !|- B in core-logic.
+#       Neg A, (A->B)->B |/- B in core-logic.
 #   (3) DNS2-instantiated applied to absurdity-core: the sequent
 #       Neg A, (A->B)->B |- B in core-logic.
 #   (4) (2) and (3) contradict: false.
