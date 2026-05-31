@@ -392,14 +392,15 @@ axiom min_antisequent_rule_to_core :
     ((Derivable core_logic G C → False) →
      (Derivable core_logic G' C' → False))
 
-/-  (1) DNS.1-anti, established in `minimal_F` (§7), is lifted to
-        `core_logic` by the rule-transfer axiom (§8). This yields
+/-  (1) DNS.1-anti, established in `minimal_F` (`DNS1_anti_instantiated`),
+        is lifted to `core_logic` by the rule-transfer axiom
+        (`min_antisequent_rule_to_core`). This yields
         a Core-level antisequent rule
                   ¬A, A ⊬ B  ⇒  ¬A, (A → B) → B ⊬ B.
     (2) The lifted rule is applied to Tennant's Claim 1, yielding
         the fatal antisequent ¬A, (A → B) → B ⊬ B in ℂ.
-    (3) DNS.2, derivable in ℂ from the absurdity ¬A, A ⊢ via
-        R→ℂ (§5), yields the sequent ¬A, (A → B) → B ⊢ B in ℂ.
+    (3) DNS.2 (`DNS2_instantiated`), derivable in ℂ from the absurdity
+        ¬A, A ⊢ via R→ℂ, yields ¬A, (A → B) → B ⊢ B in ℂ.
     (4) (2) and (3) directly contradict each other, producing
         False.
     Therefore Claim 1 cannot be maintained in ℂ without

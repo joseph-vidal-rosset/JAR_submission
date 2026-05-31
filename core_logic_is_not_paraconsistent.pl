@@ -1,14 +1,16 @@
 % ================================================================
 % core_logic_is_not_paraconsistent.pl
 %
-% Computational verification, in SWI-Prolog, of the results in the
+% Computational corroboration, in SWI-Prolog, of the results in the
 % paper under review:
 %
-%   "Core logic is not paraconsistent -- A Certified Proof"
+%   "A Proof in Coq that Core Logic is not Paraconsistent"
 %
-% This is a self-contained proof checker.  It produces Prolog proof
-% terms and LaTeX renderings (via bussproofs.sty) of every result of
-% the paper.
+% This is a self-contained, executable model of fragment F: it
+% searches for derivations, constructs explicit proof trees, and
+% renders them in LaTeX (via bussproofs.sty) for every result of the
+% paper.  On its epistemic status -- corroboration, not certification
+% -- see the note "WHAT PROLOG ADDS" below.
 %
 % --------------------------------------------------------------------
 % HOW TO RUN ON SWI-TINKER (no installation required)
@@ -77,36 +79,55 @@
 %   The command  main.  runs the seven main commands in sequence.
 %
 % --------------------------------------------------------------------
-% WHAT PROLOG DOES THAT COQ AND PHOX CANNOT
+% WHAT PROLOG ADDS, AND WHY IT IS NOT A CERTIFICATION
 % --------------------------------------------------------------------
 %
-%   The proof is certified in three independent systems (Prolog,
-%   Coq, PhoX), but only Prolog can do two things that are out of
-%   reach for proof assistants:
+%   The deductive step of the proof -- that Claim 1, together with
+%   the rules of fragment F, entails a contradiction -- is CERTIFIED
+%   in three independent proof assistants: Coq, Lean, and Athena. In
+%   each, a proof object (or its evaluation) is checked against a
+%   small trusted kernel, and the extra-logical commitments are
+%   auditable and closed (in Coq, "Print Assumptions" returns exactly
+%   the two axioms Claim1_Tennant and min_antisequent_rule_to_core).
 %
-%   1. PROLOG VERIFIES THE ANTISEQUENTS.  Claims 1 and 2 of the
-%      paper assert that  ~A, A |/- B  and  ~A, A |/- ~B  are
-%      basic antisequents of Core Logic, i.e. that no derivation
-%      of these sequents exists in F.  Prolog, exploiting the
-%      closed-world assumption and exhaustive proof search over
-%      a finite fragment, ACTUALLY CHECKS that no derivation can
-%      be built (commands  ?- theorem.  and  ?- corollary.).
-%      Coq and PhoX, having no closed-world semantics, can only
-%      accept the antisequents as hypotheses; they cannot verify
-%      their underivability.
+%   Prolog is NOT a theorem verifier, and nothing below is a fourth
+%   certification. Prolog is a logic-programming language with a fixed
+%   SLD-resolution strategy; here it is programmed, and cast, in the
+%   role of a proof checker. Its trust base is not a kernel but this
+%   entire hand-written program, plus our reading of what its
+%   execution means. What follows is therefore OPERATIONAL
+%   CORROBORATION, not certification -- valuable as an executable
+%   model, but epistemically distinct in kind from the three
+%   assistants.
 %
-%   2. PROLOG CONSTRUCTS the explicit derivation of
+%   With that caveat, the program does two things the assistants, by
+%   their open-world nature, do not:
+%
+%   1. IT SEARCHES FOR THE ANTISEQUENTS.  Claims 1 and 2 assert that
+%      ~A, A |/- B  and  ~A, A |/- ~B  are basic antisequents of Core
+%      Logic, i.e. that no derivation of these sequents exists in F.
+%      Exhausting an iterative-deepening search over the finite
+%      fragment, Prolog FAILS TO FIND any derivation (commands
+%      ?- theorem.  and  ?- corollary.).  Under the closed-world
+%      assumption, a faithful encoding, and a depth bound adequate for
+%      these shallow sequents, that failure CORROBORATES the
+%      underivability -- it does not prove it: "no derivation of depth
+%      =< 6 was found" becomes "no derivation exists" only by an
+%      argument made outside Prolog.  The proof assistants, having no
+%      closed-world semantics, cannot even attempt this; they must
+%      posit the antisequent as a hypothesis (axiom).
+%
+%   2. IT CONSTRUCTS the explicit derivation of
 %        ~A, (A=>B)=>B |- B          (via DNS.2)
 %      and of
-%        ~A, (A=>~B)=>~B |- ~B       (Corollary, via DNS.2 with ~B)
-%      thereby exhibiting the other branch of the contradiction
-%      square.
+%        ~A, (A=>~B)=>~B |- ~B       (Corollary, via DNS.2 with ~B),
+%      exhibiting -- with a bussproofs LaTeX rendering -- the other
+%      branch of the contradiction square as a concrete proof tree.
 %
-%   Hence Prolog establishes BOTH branches of the contradiction
-%   directly from the fragment F, whereas Coq and PhoX certify
-%   the deductive step from those branches to the contradiction.
-%   The three certifications are therefore complementary, not
-%   redundant.
+%   Hence the division of labour: the three assistants CERTIFY the
+%   deductive inference; this Prolog program CORROBORATES, by search
+%   and by construction, the two branches it feeds on. Corroboration
+%   and certification are complementary, not interchangeable.
 %
 % --------------------------------------------------------------------
 % STRICT CORE vs PERMISSIVE MODE
@@ -383,7 +404,8 @@ fragment :-
 % Cut is NOT a primitive rule of fragment F.  It is added here
 % separately, only to give a syntactic proof of the invertibility
 % of R-> (alternative to the structural-induction proof, which is
-% verified in the accompanying Coq file dns_final_english.v).
+% verified in the accompanying Coq file
+% core_logic_is_not_paraconsistent.v).
 %
 %       Delta |- A      A, Gamma |- C
 %       ------------------------------- Cut

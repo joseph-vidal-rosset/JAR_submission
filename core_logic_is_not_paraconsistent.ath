@@ -1,8 +1,12 @@
 #============================================================================
 # core_logic_is_not_paraconsistent.ath
-# Step 2 (corrected): rename the Succedent-typed argument of
-# l-arrow-rule and exchange-rule to avoid name collision with the
-# Succedent-typed parameter S of well-formed.
+#
+# Athena certification of the argument that Tennant's Core logic is not
+# paraconsistent, ported from the Coq script
+# core_logic_is_not_paraconsistent.v. Derivations are reified as a
+# first-class datatype Deriv, with well-formed/derivable predicates;
+# the final theorem claim1-false derives the contradiction from the two
+# asserted axioms Claim1-Tennant and min-antisequent-rule-to-core.
 #============================================================================
 
 # --- Datatypes ---
@@ -1425,7 +1429,7 @@ assert min-antisequent-rule-to-core :=
 #============================================================================
 # THEOREM claim1-false
 #============================================================================
-# The final contradiction. Schema (paper Section 2.6):
+# The final contradiction. Schema (paper Section 2.5):
 #   (1) DNS.1-anti (in minimal-F) lifted to core-logic by
 #       min-antisequent-rule-to-core.
 #   (2) Applied to Claim1-Tennant: the fatal antisequent
